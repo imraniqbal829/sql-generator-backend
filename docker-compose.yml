@@ -1,0 +1,27 @@
+# docker-compose.yml
+
+version: "3.8"
+
+services:
+  api:
+    # Build the image from the Dockerfile in the current directory
+    build: .
+    # Name the container for easy reference
+    container_name: sql-api-container
+    # Forward port 8000 on the host to port 80 in the container
+    ports:
+      - "8000:80"
+    # Set the environment variable for the Gemini API key.
+    # It's recommended to use a .env file for this in a real project,
+    # but this is also a valid way to set it.
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+    # Mount the current directory into the /app directory in the container.
+    # This is the key for live reloading. Changes on your local machine
+    # will be reflected inside the container instantly.
+    volumes:
+      - .:/app
+    # Override the default command to enable --reload for uvicorn.
+    # Uvicorn will watch for file changes and restart the server automatically.
+    command:
+      ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "80"]
