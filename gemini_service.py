@@ -21,7 +21,7 @@ async def generate_sql_from_gemini(schema_ddl: str, business_logic: str) -> str:
     **Instructions:**
     1.  Analyze the database schema below to understand the table structures, columns, and relationships.
     2.  Read the user's business logic carefully.
-    3.  Generate a single, clean, and correct PostgreSQL query that fulfills the user's request.
+    3.  Generate a single, clean, and correct PostgreSQL query that fulfills the user's request with no "\n" please.
     4.  Do not include any explanations, comments, or markdown formatting in your response. Only output the raw SQL query.
 
     **Database Schema (DDL):**

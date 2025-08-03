@@ -4,24 +4,44 @@ version: "3.8"
 
 services:
   api:
-    # Build the image from the Dockerfile in the current directory
     build: .
-    # Name the container for easy reference
     container_name: sql-api-container
-    # Forward port 8000 on the host to port 80 in the container
     ports:
       - "8000:80"
-    # Set the environment variable for the Gemini API key.
-    # It's recommended to use a .env file for this in a real project,
-    # but this is also a valid way to set it.
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-    # Mount the current directory into the /app directory in the container.
-    # This is the key for live reloading. Changes on your local machine
-    # will be reflected inside the container instantly.
+    env_file:
+      - .env
     volumes:
       - .:/app
-    # Override the default command to enable --reload for uvicorn.
-    # Uvicorn will watch for file changes and restart the server automatically.
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - sql-net
     command:
       ["uvicorn", "main:app", "--reload", "--host", "0.0.0.0", "--port", "80"]
+
+  db:
+    image: postgres:14
+    container_name: postgres-db
+    env_file:
+      - .env
+    # We are back to using a named volume, which is managed by Docker.
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    networks:
+      - sql-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  sql-net:
+    driver: bridge
+
+# Define the named volume for data persistence
+volumes:
+  postgres_data:

@@ -31,12 +31,13 @@ class ExecuteSQLRequest(BaseModel):
     """
     sql_query: str
 
-class SQLResponse(BaseModel):
+class GenerateAndExecuteResponse(BaseModel):
     """
-    Defines the structure of the outgoing response for SQL generation.
-    It will contain the generated SQL query.
+    Defines the structure of the combined response, returning both the
+    generated SQL query and the data fetched from the database.
     """
     sql_query: str
+    data: List[Dict[str, Any]]
 
 class UploadResponse(BaseModel):
     """
@@ -97,42 +98,45 @@ async def upload_ddl_schema(file: UploadFile = File(..., description="The dump.s
     return UploadResponse(message=f"Successfully uploaded and saved schema from {file.filename}", filename=file.filename)
 
 
-@app.post("/generate-sql/", response_model=SQLResponse)
-async def generate_sql_endpoint(request: SQLRequest):
+@app.post("/generate-and-execute/", response_model=GenerateAndExecuteResponse)
+async def generate_and_execute_endpoint(request: SQLRequest):
     """
-    Generates a SQL query based on the previously uploaded schema.
+    Generates a SQL query from business logic, executes it, and returns both.
     """
+    # Step 1: Read the schema from the uploaded file
     if not os.path.exists(SCHEMA_FILE_PATH):
         raise HTTPException(status_code=400, detail="No schema file found. Please use the /upload-schema/ endpoint first.")
     with open(SCHEMA_FILE_PATH, "r") as f:
         schema_ddl = f.read()
+    
     if not request.business_logic:
         raise HTTPException(status_code=400, detail="Business logic must not be empty.")
-    
-    # Call the segregated service function
+
+    # Step 2: Call Gemini to generate the SQL query
     generated_query = await generate_sql_from_gemini(schema_ddl=schema_ddl, business_logic=request.business_logic)
-    return SQLResponse(sql_query=generated_query)
 
+    print(generated_query)
 
-@app.post("/execute-sql/", response_model=List[Dict[str, Any]])
-async def execute_sql_endpoint(request: ExecuteSQLRequest):
-    """
-    Executes a given SQL query against the database and returns the result.
-    """
+    # Step 3: Execute the generated query
     pool = get_db_pool()
     if not pool:
         raise HTTPException(status_code=503, detail="Database connection is not available.")
     
+    data = []
     async with pool.acquire() as connection:
         try:
-            # Execute the query
-            records = await connection.fetch(request.sql_query)
-            # Convert the list of Record objects to a list of dictionaries
-            result = [dict(record) for record in records]
-            return result
+            records = await connection.fetch(generated_query)
+            # Convert the list of Record objects to a list of dictionaries for JSON serialization
+            data = [dict(record) for record in records]
         except asyncpg.PostgresError as e:
-            # Catch specific SQL-related errors
-            raise HTTPException(status_code=400, detail=f"SQL Error: {e}")
+            # If a SQL error occurs, return a 400 error but include the faulty SQL
+            # in the response detail to help the user debug it.
+            raise HTTPException(
+                status_code=400, 
+                detail={"sql_query": generated_query, "error": f"SQL Error: {e}"}
+            )
         except Exception as e:
-            # Catch other potential errors
             raise HTTPException(status_code=500, detail=f"An unexpected error occurred during execution: {e}")
+
+    # Step 4: Return the combined response
+    return GenerateAndExecuteResponse(sql_query=generated_query, data=data)
